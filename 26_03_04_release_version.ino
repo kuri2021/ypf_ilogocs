@@ -257,7 +257,7 @@ float readTempFrom4_20mA_bottom(int aPin){
   float v=raw*(5.0f/1023.0f);
   float mA=v/0.25f; 
   mA=constrain(mA,4.0f,20.0f);
-  return ((mA-4.0f)*(250.0f/16.0f)-30.0f) - 9.0f;
+  return ((mA-4.0f)*(250.0f/16.0f*0.83f)-30.0f);
 }
 
 //압력 센서 값 변환
