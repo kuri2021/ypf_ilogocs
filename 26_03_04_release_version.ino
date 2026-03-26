@@ -252,6 +252,14 @@ float readTempFrom4_20mA(int aPin){
   return (mA-4.0f)*(250.0f/16.0f)-30.0f;
 }
 
+float readTempFrom4_20mA_bottom(int aPin){
+  int raw=analogRead(aPin); 
+  float v=raw*(5.0f/1023.0f);
+  float mA=v/0.25f; 
+  mA=constrain(mA,4.0f,20.0f);
+  return ((mA-4.0f)*(250.0f/16.0f)-30.0f) - 9.0f;
+}
+
 //압력 센서 값 변환
 float readPressureBar(){
   int raw = analogRead(pressurePin); 
@@ -1229,7 +1237,7 @@ if(set_flag && ST==ST_IDLE){ // 첫 데이터 세팅이 끝나고 나서 작동�
   int rBot = analogReadStable(tempBotPin); //하판 아날로그 센서 데이터 변환 변수
   int rP   = analogReadStable(pressurePin); //압력 아날로그 센서 데이터 변환 변수
   float rtTop = readTempFrom4_20mA(tempTopPin);// 상판 데이터를 ℃단위로 변환 변수
-  float rtBot = readTempFrom4_20mA(tempBotPin);// 하판 데이터를 ℃단위로 변환 변수
+  float rtBot = readTempFrom4_20mA_bottom(tempBotPin);// 하판 데이터를 ℃단위로 변환 변수
   float rpBar = readPressureBar();//압력 데이터를 BAR단위로 변환 변수
   bool topRail = (rTop>=ADC_NEAR_HIGH), botRail=(rBot>=ADC_NEAR_HIGH), pRail=(rP>=ADC_NEAR_HIGH);
 
