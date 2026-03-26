@@ -204,7 +204,7 @@ HardwareSerial& HMI = Serial1;
 #define VP_HOLD_ELAP   0x8010
 #define VP_HOLD_REMAIN 0x8012
 #define VP_ELAPSED_TIME 0x8114
-#define VP_TEST1     0x8200
+#define VP_DATA_PUSH     0x8200
 #define VP_TEST2     0x8202
 
 static int TtValue = 0;
@@ -398,6 +398,7 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_SET_CHTB,   BcValue );
   dgusWriteVP(VP_SET_P,   PValue );
   dgusWriteVP(VP_SET_H,   TValue );
+  dgusWriteVP(VP_DATA_PUSH, 0);
   set_flag = true;
 }
 // .........................................................................................................................................................................................................................
@@ -533,15 +534,12 @@ void pollHMI(){
                       settingsTouch();
                     }
                     }break;
-                              case VP_TEST1 : {
+                              case VP_DATA_PUSH : {
                         Newtest1=v;
-                          if(Newtest1 != test1){
-                      Serial.print("전 test1 데이터 = ");
-                      Serial.println(test1);
-                      Serial.print("뉴 test1 데이터 = ");
-                      Serial.println(Newtest1);
-                      test1   = Newtest1;
-                          }
+                          if(Newtest1 != 0){
+                            Serial.print("뉴 데이터 트리거 발동 됨 ");
+                            data_set();
+                        }
                     }break;
                      case VP_TEST2 : {
                         Newtest2=v;
@@ -1217,6 +1215,7 @@ void loop(){
       return; // 아무것도 안함
     }
   }
+
 bool isRunState = (ST!=ST_IDLE && ST!=ST_END);
 if(set_flag && ST==ST_IDLE){ // 첫 데이터 세팅이 끝나고 나서 작동하기 시작(기계가 켜질때 디스플레이의 변수는 모두 0이기에 설정 값이 0으로 저장되는것을 방지)
   pollHMI();
@@ -1423,7 +1422,7 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
       dgusReadVP(VP_SET_H,1);  
       dgusReadVP(VP_SET_CHTT,1); 
       dgusReadVP(VP_SET_CHTB,1);
-      dgusReadVP(VP_TEST1,1);
+      dgusReadVP(VP_DATA_PUSH,1);
       dgusReadVP(VP_TEST2,1);
   }
   //세이브 펑션
