@@ -105,7 +105,8 @@ static bool SET_STRIDE2 = true;
 
 static uint16_t save_flag = 0;
 
-
+static bool Press_flag = false;
+/* 압력 제어 */
 
 /* ===================== 타입/구조체 ===================== */
 struct SetBundle { uint16_t tt, tb, p01, hold, chtt, chtb; };
@@ -222,7 +223,7 @@ static int NewBtValue = 0;
 static int NewBcValue = 0;
 static int NewPValue = 0;
 static int NewTValue = 0;
-static int Newtest1 = 0;
+static int New_data = 0;
 static int Newtest2 = 0;
 
 //세팅 데이터 어드레스(지금은 사용 x)
@@ -380,6 +381,9 @@ static void pushStatusToHMI(float tTop,float tBot,float pBar,uint16_t st,uint16_
 
   dgusWriteVP(VP_TT,  (uint16_t)tt);
   dgusWriteVP(VP_TB,  (uint16_t)tb);
+  if(Press_flag == true){
+    
+  }
   dgusWriteVP(VP_P,   (uint16_t)p01);
   dgusWriteVP(VP_ST,  st);
   dgusWriteVP(VP_FLAGS, flags);
@@ -504,7 +508,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_P : {
                         NewPValue=v;
-                    if(NewPValue != PValue  && NewPValue > 0 && NewPValue < 21 ){
+                    if(NewPValue != PValue  && NewPValue >= 0 && NewPValue < 21 ){
                       PValue   = NewPValue;
                       setPressureBar =NewPValue/10.0f ;
                       settingsTouch();
@@ -512,7 +516,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_H : {
                     NewTValue=v;
-                    if(NewTValue != TValue  && NewTValue > 0 && NewTValue < 3601 ){
+                    if(NewTValue != TValue  && NewTValue >= 0 && NewTValue < 3601 ){
                       TValue   = NewTValue;
                       holdTimeSec = NewTValue;
                       settingsTouch();
@@ -534,12 +538,9 @@ void pollHMI(){
                       settingsTouch();
                     }
                     }break;
-                              case VP_DATA_PUSH : {
-                        Newtest1=v;
-                          if(Newtest1 != 0){
-                            Serial.print("뉴 데이터 트리거 발동 됨 ");
-                            data_set();
-                        }
+                    case VP_DATA_PUSH : {
+                        New_data=v;
+                          
                     }break;
                      case VP_TEST2 : {
                         Newtest2=v;
@@ -762,8 +763,7 @@ void ctrlHeaterPair(float tTop,float tBot){
 
 
 
-static bool Press_flag = false;
-/* 압력 제어 */
+
 
 //현재 압력을 목표 압력에 맞게 유지하기 위해 펌프와 배기 밸브를 자동 제어하는 함수
 // 작업 시작 시 베기 닫기 및 콤프레샤 관리
@@ -1089,19 +1089,21 @@ void setup() {
   btnStart.lastChangeMs = btnStop.lastChangeMs = millis();
 
 
-  // Settings s;
+  Settings s;
 
-  // s.setTT   = 100;
-  // s.setTB   = 100;
-  // s.setP_x10= 1;
-  // s.holdSec = 90;
-  // s.coolTT  = 10;
-  // s.coolTB  = 10;
-  // s.magic   = SETTINGS_MAGIC;
+  s.setTT   = 100;
+  s.setTB   = 100;
+  s.setP_x10= 1;
+  s.holdSec = 90;
+  s.coolTT  = 10;
+  s.coolTB  = 10;
+  s.magic   = SETTINGS_MAGIC;
 
 
 
-  // EEPROM.put(37, s);
+  EEPROM.put(37, s);
+
+  New_data = 1;
 
  // 저장된 설정 불러오기
   data_set();
@@ -1220,6 +1222,11 @@ bool isRunState = (ST!=ST_IDLE && ST!=ST_END);
 if(set_flag && ST==ST_IDLE){ // 첫 데이터 세팅이 끝나고 나서 작동하기 시작(기계가 켜질때 디스플레이의 변수는 모두 0이기에 설정 값이 0으로 저장되는것을 방지)
   pollHMI();
 }
+
+  if(New_data != 0){
+      Serial.print("뉴 데이터 트리거 발동 됨 ");
+      data_set();
+    }
 
 
   int rTop = analogReadStable(tempTopPin); //상판 아날로그 센서 데이터 변환 변수
@@ -1416,13 +1423,13 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
 //디스플레이한테 읽기 요청
   if(now2 - lastSetPollMs >= SET_POLL_MS){
     lastSetPollMs = now2;
+    dgusReadVP(VP_DATA_PUSH,1);
       dgusReadVP(VP_SET_TT,1); 
       dgusReadVP(VP_SET_TB,1); 
       dgusReadVP(VP_SET_P,1);
       dgusReadVP(VP_SET_H,1);  
       dgusReadVP(VP_SET_CHTT,1); 
       dgusReadVP(VP_SET_CHTB,1);
-      dgusReadVP(VP_DATA_PUSH,1);
       dgusReadVP(VP_TEST2,1);
   }
   //세이브 펑션
