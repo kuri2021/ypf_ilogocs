@@ -206,6 +206,7 @@ HardwareSerial& HMI = Serial1;
 #define VP_HOLD_REMAIN 0x8012
 #define VP_ELAPSED_TIME 0x8114
 #define VP_DATA_PUSH     0x8200
+#define VP_ACTIVE     0x8500
 #define VP_TEST2     0x8202
 
 static int TtValue = 0;
@@ -225,6 +226,7 @@ static int NewPValue = 0;
 static int NewTValue = 0;
 static int New_data = 0;
 static int Newtest2 = 0;
+static int active_flag = 0;
 
 //세팅 데이터 어드레스(지금은 사용 x)
 static const int TTAdress = 10;
@@ -403,6 +405,7 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_SET_P,   PValue );
   dgusWriteVP(VP_SET_H,   TValue );
   dgusWriteVP(VP_DATA_PUSH, 0);
+  new_Data = 0;
   set_flag = true;
 }
 // .........................................................................................................................................................................................................................
@@ -489,6 +492,9 @@ void pollHMI(){
                 if (words>=1){
                   uint16_t v = getByIndex(0);
                   switch(base_vp){
+                    case VP_ACTIVE :{
+                      active_flag = v;
+                    }
                     case VP_SET_TT : {
                       NewTtValue =v;
                     if(NewTtValue != TtValue && NewTtValue > 0 && NewTtValue < 201){
@@ -508,7 +514,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_P : {
                         NewPValue=v;
-                    if(NewPValue != PValue  && NewPValue >= 0 && NewPValue < 21 ){
+                    if(NewPValue != PValue  && NewPValue >= 0 && NewPValue < 21 && active_flag !=0){
                       PValue   = NewPValue;
                       setPressureBar =NewPValue/10.0f ;
                       settingsTouch();
@@ -516,7 +522,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_H : {
                     NewTValue=v;
-                    if(NewTValue != TValue  && NewTValue >= 0 && NewTValue < 3601 ){
+                    if(NewTValue != TValue  && NewTValue >= 0 && NewTValue < 3601 && active_flag !=0){
                       TValue   = NewTValue;
                       holdTimeSec = NewTValue;
                       settingsTouch();
@@ -540,7 +546,9 @@ void pollHMI(){
                     }break;
                     case VP_DATA_PUSH : {
                         New_data=v;
-                          
+                        if(New_data != 0){
+                          data_set();
+                        }
                     }break;
                      case VP_TEST2 : {
                         Newtest2=v;
@@ -609,7 +617,7 @@ static void saveSettingsToEEPROM(){
   s.coolTB  = BcValue;
   s.magic   = SETTINGS_MAGIC;
 
-if(TtValue==0&&BtValue==0&&PValue==0&&TValue==0){
+if(TtValue==0||BtValue==0||active_flag ==0){
   Serial.println("기계 전원 off");
 }else{
     EEPROM.put(37, s);
@@ -1028,10 +1036,9 @@ static void data_get(int EEPROM_ADDR){
 // EEPROM에 저장된 배열의 데이터를 메모리 전역 변수에 데이터를 가공하여 부여
 // SETUP에서 한번만 실행
 static void data_set(){
-
-   Settings s;
-
-  EEPROM.get(37, s);
+if(New_data != 0){
+  Settings s;
+EEPROM.get(37, s);
 
   TtValue = s.setTT;
   BtValue = s.setTB;
@@ -1053,9 +1060,12 @@ Serial.println(holdTimeSec);
 Serial.println(setPressureBar);
 Serial.println(coolEndTopHeatC);
 Serial.println(coolEndBotHeatC);
-  
+
 
   pushSetpointsToHMI();
+}
+  
+  
 }
 
 unsigned long bootTime = 0;
@@ -1089,19 +1099,19 @@ void setup() {
   btnStart.lastChangeMs = btnStop.lastChangeMs = millis();
 
 
-  Settings s;
+  // Settings s;
 
-  s.setTT   = 100;
-  s.setTB   = 100;
-  s.setP_x10= 1;
-  s.holdSec = 90;
-  s.coolTT  = 10;
-  s.coolTB  = 10;
-  s.magic   = SETTINGS_MAGIC;
+  // s.setTT   = 100;
+  // s.setTB   = 100;
+  // s.setP_x10= 1;
+  // s.holdSec = 90;
+  // s.coolTT  = 10;
+  // s.coolTB  = 10;
+  // s.magic   = SETTINGS_MAGIC;
 
 
 
-  EEPROM.put(37, s);
+  // EEPROM.put(37, s);
 
   New_data = 1;
 
@@ -1424,6 +1434,7 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
   if(now2 - lastSetPollMs >= SET_POLL_MS){
     lastSetPollMs = now2;
     dgusReadVP(VP_DATA_PUSH,1);
+    dgusReadVP(VP_ACTIVE,1);
       dgusReadVP(VP_SET_TT,1); 
       dgusReadVP(VP_SET_TB,1); 
       dgusReadVP(VP_SET_P,1);
