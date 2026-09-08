@@ -383,9 +383,11 @@ static void pushStatusToHMI(float tTop,float tBot,float pBar,uint16_t st,uint16_
 
   dgusWriteVP(VP_TT,  (uint16_t)tt);
   dgusWriteVP(VP_TB,  (uint16_t)tb);
-  if(Press_flag == true){
-    
-  }
+  // if(Press_flag == true){
+  //   dgusWriteVP(VP_P,  PValue);
+  // }else{
+  //   dgusWriteVP(VP_P,   (uint16_t)p01);
+  // }
   dgusWriteVP(VP_P,   (uint16_t)p01);
   dgusWriteVP(VP_ST,  st);
   dgusWriteVP(VP_FLAGS, flags);
@@ -405,7 +407,7 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_SET_P,   PValue );
   dgusWriteVP(VP_SET_H,   TValue );
   dgusWriteVP(VP_DATA_PUSH, 0);
-  new_Data = 0;
+  New_data = 0;
   set_flag = true;
 }
 // .........................................................................................................................................................................................................................
@@ -790,8 +792,15 @@ static void maintainPressure_UIAligned(float pBar, bool isRunState){
       setB(B11_EXH, false); // 배기 기기가 닫혀있는다는 것을 기록하는 함수(시리얼 모니터 적합)
       g_exhaustOpen = false;// 배기 기기 플래그
   }
+  static bool pressureHoldActive = false;
+  static unsigned long pressureHoldStartMs = 0;
+
+  const unsigned long PRESSURE_HOLD_MS = 3000; // 3초
+
 
   if(pBar < setPressureBar){
+    pressureHoldActive = false;
+    pressureHoldStartMs = 0;
     if(!Press_flag){
       driveLevel(pumpPIN, true, PUMP_ACTIVE_HIGH);//펌프 작동
       setB(B4_PUMP, true);//펌프 작동을 기록
@@ -812,9 +821,35 @@ static void maintainPressure_UIAligned(float pBar, bool isRunState){
     }
   
   }else{
-    driveLevel(pumpPIN, false, PUMP_ACTIVE_HIGH);//펌프 중지
-    setB(B4_PUMP, false);// 펌프 중지를 기록
-    Press_flag = true;
+
+
+    if(!pressureHoldActive){
+
+      // 처음 설정압에 도달한 순간
+      pressureHoldActive = true;
+      pressureHoldStartMs = millis();
+
+    }
+
+    // 설정압 도달 후 3초 동안은 펌프 계속 ON
+    if(millis() - pressureHoldStartMs < PRESSURE_HOLD_MS){
+
+      driveLevel(pumpPIN, true, PUMP_ACTIVE_HIGH);//펌프 계속 작동
+      setB(B4_PUMP, true);//펌프 작동 기록
+
+    }else{
+
+      // 3초가 지나면 펌프 OFF
+      driveLevel(pumpPIN, false, PUMP_ACTIVE_HIGH);//펌프 중지
+      setB(B4_PUMP, false);//펌프 중지 기록
+
+      Press_flag = true;
+
+    }
+
+    // driveLevel(pumpPIN, false, PUMP_ACTIVE_HIGH);//펌프 중지
+    // setB(B4_PUMP, false);// 펌프 중지를 기록
+    // Press_flag = true;
   }
   static bool  bleedActive = false;
   static unsigned long bleedTglMs = 0, bleedDoneMs = 0;
