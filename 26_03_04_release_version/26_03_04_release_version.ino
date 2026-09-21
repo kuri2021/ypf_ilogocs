@@ -405,7 +405,7 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_SET_P,   PValue );
   dgusWriteVP(VP_SET_H,   TValue );
   dgusWriteVP(VP_DATA_PUSH, 0);
-  new_Data = 0;
+  New_data = 0;
   set_flag = true;
 }
 // .........................................................................................................................................................................................................................
