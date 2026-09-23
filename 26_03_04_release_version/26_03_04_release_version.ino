@@ -26,7 +26,8 @@ static void settingsTouch();
 static const unsigned long MIN_TX_SPACING_MS     = 12;
 static const uint16_t STATUS_PUSH_MS             = 200;
 static const unsigned long SET_POLL_MS           = 300;
-static const unsigned long PUSH_SETS_MIN_GAP_MS  = 1000;
+static const unsigned long PUSH_SETS_MIN_GAP_MS  = 100;
+static const unsigned long IO_POLL_MS           = 100;
 
 // Buttons
 static const bool START_ACTIVE_LOW = false;
@@ -151,11 +152,6 @@ const int stopBtnPin    = 7;
 /* ===================== 출력 드라이브 ===================== */
 inline void driveLevel(int pin, bool on, bool activeHigh){
   if(pin<0) return;
-  if(IO1==1||IO2==1||IO3==1||IO4==1||IO5==1||IO6==1){
-    if(on){
-      Serial.println(pin);
-    }
-  }
   pinMode(pin, OUTPUT);
   digitalWrite(pin, (on ? (activeHigh?HIGH:LOW) : (activeHigh?LOW:HIGH)));
 }
@@ -175,6 +171,17 @@ enum { B0_READY, B1_START, B2_STOP, B3_RUN, B4_PUMP, B5_TOP_HEAT, B6_BOT_HEAT, B
 uint16_t FLAGS=0;
 inline void setB(uint8_t b,bool v){ if(v) FLAGS|=(1<<b); else FLAGS&=~(1<<b); }
 bool set_flag = false;
+
+u16 act_flag = 0;
+
+#define ACT_BIT(n)        (1u << (n))
+
+#define ACT_TOP           ACT_BIT(0)
+#define ACT_BOTTOM        ACT_BIT(1)
+#define ACT_TOP_FAN       ACT_BIT(2)
+#define ACT_BOTTOM_FAN    ACT_BIT(3)
+#define ACT_PUMP          ACT_BIT(4)
+#define ACT_SOLENOID      ACT_BIT(5)
 
 /* ===================== 상태 머신 ===================== */
 enum Stage : uint8_t { ST_IDLE, ST_RAMP, ST_PRESS, ST_AT_TEMP, ST_HOLD, ST_COOL, ST_END };
@@ -198,6 +205,8 @@ static bool g_exhaustOpen = true;
 static unsigned long lastSetPollMs = 0;
 static unsigned long lastPushSetsMs = 0;
 static unsigned long lastTxTimeMs   = 0;
+static unsigned long lastIoPollMs = 0;
+
 
 /* ========= 버튼 ========= */
 static ButtonState btnStart = {startBtnPin, START_ACTIVE_LOW, false, false, 0};
@@ -210,6 +219,7 @@ HardwareSerial& HMI = Serial1;
 #define VP_P         0x8004
 #define VP_ST        0x800A
 #define VP_FLAGS     0x800C
+
 #define VP_SET_TT    0x8100
 #define VP_SET_TB    0x8102
 #define VP_SET_P     0x8104
@@ -220,23 +230,19 @@ HardwareSerial& HMI = Serial1;
 #define VP_HOLD_REMAIN 0x8012
 #define VP_ELAPSED_TIME 0x8114
 #define VP_DATA_PUSH     0x8200
+#define VP_IO_TEST     0x8300
 #define VP_ACTIVE     0x8500
-#define VP_USERSETTING_TOP_TEMP_MAX 0x4080 // 유저세팅 8개
-#define VP_USERSETTING_TOP_TEMP_MIN 0x4070 // 유저세팅 8개
-#define VP_USERSETTING_BOT_TEMP_MAX 0x4110 // 유저세팅 8개
-#define VP_USERSETTING_BOT_TEMP_MIN 0x4100 // 유저세팅 8개
-#define VP_USERSETTING_PRES_MAX 0x4140 // 유저세팅 8개
-#define VP_USERSETTING_PRES_MIN 0x4130 // 유저세팅 8개
-#define VP_USERSETTING_DELAY_MAX 0x4170 // 유저세팅 8개
-#define VP_USERSETTING_DELAY_MIN 0x4160 // 유저세팅 8개
-#define VP_IO_1 0x8020 // IO 6개
-#define VP_IO_2 0x8022 // IO 6개
-#define VP_IO_3 0x8024 // IO 6개
-#define VP_IO_4 0x8026 // IO 6개
-#define VP_IO_5 0x8028 // IO 6개
-#define VP_IO_6 0x802A // IO 6개
-#define VP_ENGINEERMODE_SENSER 0X4700 // 엔지니어모드 센서 보정
-#define VP_ENGINEERMODE_PRES 0X4720 // 엔지니어모드 최대 압력
+
+#define VP_USERSETTING_TOP_TEMP_MAX 0x8130 // 유저세팅 8개
+#define VP_USERSETTING_TOP_TEMP_MIN 0x8132 // 유저세팅 8개
+#define VP_USERSETTING_BOT_TEMP_MAX 0x8134 // 유저세팅 8개
+#define VP_USERSETTING_BOT_TEMP_MIN 0x8136 // 유저세팅 8개
+#define VP_USERSETTING_PRES_MAX 0x8138 // 유저세팅 8개
+#define VP_USERSETTING_PRES_MIN 0x813A // 유저세팅 8개
+#define VP_USERSETTING_DELAY_MAX 0x813C // 유저세팅 8개
+#define VP_USERSETTING_DELAY_MIN 0x8140 // 유저세팅 8개
+#define VP_ENGINEERMODE_SENSER 0x8142 // 엔지니어모드 센서 보정
+#define VP_ENGINEERMODE_PRES 0x8144 // 엔지니어모드 최대 압력
 
 
 
@@ -268,17 +274,16 @@ static int NewPValue = 0;
 static int NewTValue = 0;
 static int New_data = 0;
 static int Newtest2 = 0;
-static int active_flag = 0;
-static int New_toptempmin = 1;
-static int New_toptempmax = 200;
-static int New_bottempmin = 1;
-static int New_bottempmax = 200;
+static int New_toptempmin = 0;
+static int New_toptempmax = 0;
+static int New_bottempmin = 0;
+static int New_bottempmax = 0;
 static int New_pressmin = 0;
-static int New_pressmax = 20;
+static int New_pressmax = 0;
 static int New_delaymin = 0;
-static int New_delaymax = 3600;
-static int New_sensor_result = 100;
-static int New_press_result = 100;
+static int New_delaymax = 0;
+static int New_sensor_result = 0;
+static int New_press_result = 0;
 
 
 //세팅 데이터 어드레스(지금은 사용 x)
@@ -364,26 +369,6 @@ static void dgusWriteVP16(uint16_t vp, uint16_t val){
   HMI.write(val&0xFF);
 }
 
-// static void dgusWriteVP16(uint16_t vp, uint16_t val){
-//   txThrottleWait();
-
-//   uint8_t buf[8];
-
-//   buf[0] = 0x5A;
-//   buf[1] = 0xA5;
-//   buf[2] = 0x05;
-//   buf[3] = 0x82;
-//   buf[4] = vp >> 8;
-//   buf[5] = vp & 0xFF;
-//   buf[6] = val >> 8;
-//   buf[7] = val & 0xFF;
-
-//   uint16_t crc = crc16_modbus(buf, 8);
-
-//   HMI.write(buf, 8);
-//   HMI.write(crc & 0xFF);       // CRC L
-//   HMI.write(crc >> 8);         // CRC H
-// }
 //여러 값을 주소 값을 적는 함수
 static void dgusWriteVPWords(uint16_t vp, const uint16_t* data, uint16_t words){
   txThrottleWait();
@@ -460,6 +445,7 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_SET_P,   PValue );
   dgusWriteVP(VP_SET_H,   TValue );
   dgusWriteVP(VP_DATA_PUSH, 0);
+
   dgusWriteVP(VP_USERSETTING_TOP_TEMP_MAX, toptempmax);
   dgusWriteVP(VP_USERSETTING_TOP_TEMP_MIN, toptempmin);
   dgusWriteVP(VP_USERSETTING_BOT_TEMP_MAX, bottempmax);
@@ -544,9 +530,6 @@ void pollHMI(){
                 if (words>=1){
                   uint16_t v = getByIndex(0);
                   switch(base_vp){
-                    case VP_ACTIVE :{
-                      active_flag = v;
-                    }
                     case VP_SET_TT : {
                       NewTtValue =v;
                     if(NewTtValue != TtValue && NewTtValue > 0 && NewTtValue < 201){
@@ -566,7 +549,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_P : {
                         NewPValue=v;
-                    if(NewPValue != PValue  && NewPValue >= 0 && NewPValue < 21 && active_flag !=0){
+                    if(NewPValue != PValue  && NewPValue >= 0 && NewPValue < 21){
                       PValue   = NewPValue;
                       setPressureBar =NewPValue/10.0f ;
                       settingsTouch();
@@ -574,7 +557,7 @@ void pollHMI(){
                     }break;
                       case VP_SET_H : {
                     NewTValue=v;
-                    if(NewTValue != TValue  && NewTValue >= 0 && NewTValue < 3601 && active_flag !=0){
+                    if(NewTValue != TValue  && NewTValue >= 0 && NewTValue < 3601 ){
                       TValue   = NewTValue;
                       holdTimeSec = NewTValue;
                       settingsTouch();
@@ -603,122 +586,45 @@ void pollHMI(){
                         }
                     }break;
                     case VP_USERSETTING_TOP_TEMP_MAX : {
-                          New_toptempmax=v;
-                          if(New_toptempmax != toptempmax && New_toptempmax <= 220 && New_toptempmax > 0){
-                            toptempmax = New_toptempmax;
-                            Serial.print("상판 MAX : ");
-                            Serial.println(toptempmax);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_TOP_TEMP_MIN : {
-                        New_toptempmin=v;
-                          if(New_toptempmin != toptempmin && New_toptempmin <= 220 && New_toptempmin > 0){
-                            toptempmin = New_toptempmin;
-                            Serial.print("상판 MIN : ");
-                            Serial.println(toptempmin);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_BOT_TEMP_MAX : {
-                        New_bottempmax=v;
-                          if(New_bottempmax != bottempmax && New_bottempmax <= 220 && New_bottempmax > 0){
-                            bottempmax = New_bottempmax;
-                            Serial.print("하판 MAX : ");
-                            Serial.println(bottempmax);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_BOT_TEMP_MIN : {
-                        New_bottempmin=v;
-                          if(New_bottempmin != bottempmin && New_bottempmin <= 220 && New_bottempmin > 0){
-                            bottempmin = New_bottempmin;
-                            Serial.print("하판 MIN : ");
-                            Serial.println(bottempmin);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_PRES_MAX : {
-                        New_pressmax=v;
-                          if(New_pressmax != pressmax && New_pressmax <= 20 && New_pressmax >= 0){
-                            pressmax = New_pressmax;
-                            Serial.print("압 MAX : ");
-                            Serial.println(pressmax);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_PRES_MIN : {
-                        New_pressmin=v;
-                          if(New_pressmin != pressmin && New_pressmin <= 20 && New_pressmin >= 0){
-                            pressmin = New_pressmin;
-                            Serial.print("압 MIN : ");
-                            Serial.println(pressmin);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_DELAY_MAX : {
-                        New_delaymax=v;
-                          if(New_delaymax != delaymax && New_delaymax <= 3600 && New_delaymax >= 0){
-                            delaymax = New_delaymax;
-                            Serial.print("지연 MAX : ");
-                            Serial.println(delaymax);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_USERSETTING_DELAY_MIN : {
-                        New_delaymin=v;
-                          if(New_delaymin != delaymin && New_delaymin <= 3600 && New_delaymin >= 0){
-                            delaymin = New_delaymin;
-                            Serial.print("지연 MIN : ");
-                            Serial.println(delaymin);
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_IO_1 : {
-                      if(IO1!=v){
-                        if(v==0||v==1){
-                          IO1=v;
-                        Serial.print("상판 : ");
-                        Serial.println(IO1);
-                        IOSerial();
+                      New_toptempmax = v;
+                      if(toptempmax != New_toptempmax && New_toptempmax>0 && New_toptempmax <= 220){
+                        toptempmax = New_toptempmax;
+                        Serial.print("상판 max: ");
+                        Serial.println(toptempmax);
                       }
-                      }
-                    }break;
-                    case VP_IO_2 : {
-                       if(IO2!=v){
-                        if(v==0||v==1){
-                          IO2=v;
-                        Serial.print("하판 : ");
-                        Serial.println(IO2);
-                        IOSerial();
-                      }
-                       }
-                      
                     }break;
 
-                    case VP_IO_3:{
-                       if(IO3!=v){
-                        if(v==0||v==1){
-                          IO3=v;
-                        Serial.print("상팬 : ");
-                        Serial.println(IO3);
-                        IOSerial();
+                    case VP_IO_TEST :{
+                      act_flag = v;
+                      if(act_flag == ACT_TOP){
+                        Serial.println("상판 io 들어옴");
+                        driveLevel(heaterTopPIN, true, HEATER_TOP_ACTIVE_HIGH); 
+                        driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH); 
+                        driveLevel(fanTopPIN,false,FAN_TOP_ACTIVE_HIGH);
+                        driveLevel(fanBotPIN,false,FAN_BOT_ACTIVE_HIGH);
+                      }else if(act_flag == ACT_BOTTOM) {
+                        Serial.println("하판 io 들어옴");
+                        driveLevel(heaterBotPIN, true, HEATER_BOT_ACTIVE_HIGH); 
+                        driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH); 
+                        driveLevel(fanTopPIN,false,FAN_TOP_ACTIVE_HIGH);
+                        driveLevel(fanBotPIN,false,FAN_BOT_ACTIVE_HIGH);
+                      }else if(act_flag == ACT_TOP_FAN) {
+                        Serial.println("상팬 io 들어옴");
+                        driveLevel(fanTopPIN,true,FAN_TOP_ACTIVE_HIGH);
+                        driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH); 
+                        driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH); 
+                        driveLevel(fanBotPIN,false,FAN_BOT_ACTIVE_HIGH);
+                      }else if(act_flag == ACT_BOTTOM_FAN) {
+                        Serial.println("하팬 io 들어옴");
+                        driveLevel(fanBotPIN,true,FAN_BOT_ACTIVE_HIGH);  
+                        driveLevel(fanTopPIN,false,FAN_BOT_ACTIVE_HIGH);
+                        driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH); 
+                        driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH); 
+                      }else if(act_flag == ACT_PUMP) {
+                        Serial.println("펌프 io 들어옴");
+                      }else if(act_flag == ACT_SOLENOID) {
+                        Serial.println("솔 io 들어옴");
                       }
-                       }
-                    }break;
-                    case VP_ENGINEERMODE_SENSER : {
-                        New_sensor_result=v;
-                          if(New_sensor_result != sensor_result){
-                            sensor_result = New_sensor_result;
-                            settingsEngineerTouch();
-                          }
-                    }break;
-                    case VP_ENGINEERMODE_PRES : {
-                        New_press_result=v;
-                          if(New_press_result != press_result){
-                            press_result = New_press_result;
-                            settingsEngineerTouch();
-                          }
                     }break;
                 }
               }
@@ -791,64 +697,6 @@ static void IOSerial(){
   Serial.println(IO6);
 }
 
-static void IOWork(float tTop,float tBot){
-  // Serial.println("IOWork 들어옴");
-  if(ST != ST_IDLE) return;
-  // Serial.println("IOWork 들어옴/ST_IDLE넘어옴");
-  if(IO1 > 0){
-    driveLevel(heaterTopPIN,true,HEATER_TOP_ACTIVE_HIGH);
-    Serial.println("상판 on");
-    // testTopHeater_70C(tTop);
-  }else{
-    driveLevel(heaterTopPIN,false,HEATER_TOP_ACTIVE_HIGH);
-    // testTopHeater_70C(tTop);
-  }
-  if(IO2 > 0){
-driveLevel(heaterBotPIN,true,HEATER_BOT_ACTIVE_HIGH); 
-Serial.println("하판 on");
-  }else{
-      driveLevel(heaterBotPIN,false,HEATER_BOT_ACTIVE_HIGH);
-  }
-  if(IO3 > 0){
-    driveLevel(fanTopPIN,true,FAN_TOP_ACTIVE_HIGH);  
-    driveLevel(32,true,FAN_TOP_ACTIVE_HIGH);  
-    driveLevel(33,true,FAN_TOP_ACTIVE_HIGH);  
-    driveLevel(34,true,FAN_TOP_ACTIVE_HIGH);  
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);  
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);
-    driveLevel(31,true,FAN_TOP_ACTIVE_HIGH);
-    // Serial.print(fanTopPIN); 
-    Serial.println("상판팬 on");
-  }else{
-      driveLevel(fanTopPIN,false,FAN_TOP_ACTIVE_HIGH);
-      // Serial.print("상판팬 off");
-  }
-  if(IO4 > 0){
-driveLevel(fanBotPIN,true,FAN_BOT_ACTIVE_HIGH); 
-Serial.println("하판팬 on");
-  }else{
-      driveLevel(fanBotPIN,false,FAN_BOT_ACTIVE_HIGH);
-      // Serial.print("하판팬 off");
-  }
-  if(IO5 > 0){
-    driveLevel(pumpPIN, true, PUMP_ACTIVE_HIGH);
-    Serial.println("펌프 on");
-  }else{
-      driveLevel(pumpPIN,false,PUMP_ACTIVE_HIGH);
-      // Serial.print("펌프 off");
-  }
-  if(IO6 > 0){
-    driveLevel(exhaustPIN, true, EXHAUST_ACTIVE_HIGH);
-    Serial.println("솔 on");
-  }else{
-    driveLevel(exhaustPIN, false, EXHAUST_ACTIVE_HIGH);
-    // Serial.print("솔 off");
-  }
-}
-
 //저장 하는 함수
 static void saveSettingsToEEPROM(){
   Settings s;
@@ -861,7 +709,7 @@ static void saveSettingsToEEPROM(){
   s.coolTB  = BcValue;
   s.magic   = SETTINGS_MAGIC;
 
-if(TtValue==0||BtValue==0||active_flag ==0){
+if(TtValue==0||BtValue==0){
   Serial.println("기계 전원 off");
 }else{
     EEPROM.put(37, s);
@@ -1645,7 +1493,7 @@ void setup() {
 
   New_data = 1;
 
-  IOSerial();
+  // IOSerial();
 
  // 저장된 설정 불러오기
   data_set();
@@ -1755,6 +1603,7 @@ void loop(){
     if (!loopReady) {
     if (millis() - bootTime >= 5000) {
       loopReady = true;
+      Serial.println("loop시작");
     } else {
       return; // 아무것도 안함
     }
@@ -1956,6 +1805,17 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
     }
   }
 
+  if(now2 - lastIoPollMs >= IO_POLL_MS){
+    lastIoPollMs = now2;
+    // setStage(ST_RAMP);
+    // setStage(ST_HOLD);
+    // setStage(ST_COOL);
+    // setStage(ST_HOLD);
+    // setStage(ST_HOLD);
+    // driveLevel(fanTopPIN,true,FAN_TOP_ACTIVE_HIGH); setB(B9_TOP_FAN,true);
+    // driveLevel(fanBotPIN,true,FAN_BOT_ACTIVE_HIGH); setB(B10_BOT_FAN,true);
+    dgusReadVP(VP_IO_TEST,1);
+}
 
 //디스플레이한테 읽기 요청
   if(now2 - lastSetPollMs >= SET_POLL_MS){
@@ -1968,26 +1828,18 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
       dgusReadVP(VP_SET_H,1);  
       dgusReadVP(VP_SET_CHTT,1); 
       dgusReadVP(VP_SET_CHTB,1);
-      // dgusReadVP(VP_IO_1,1);
-      // dgusReadVP(VP_IO_2,1);
-      // dgusReadVP(VP_IO_3,1);
-      // dgusReadVP(VP_IO_4,1);
-      // dgusReadVP(VP_IO_5,1);
-      // dgusReadVP(VP_IO_6,1);
-      // dgusReadVP(VP_USERSETTING_TOP_TEMP_MAX,1);
-      // dgusReadVP(VP_USERSETTING_TOP_TEMP_MIN,1);
-      // dgusReadVP(VP_USERSETTING_BOT_TEMP_MAX,1);
-      // dgusReadVP(VP_USERSETTING_BOT_TEMP_MIN,1);
-      // dgusReadVP(VP_USERSETTING_PRES_MAX,1);
-      // dgusReadVP(VP_USERSETTING_PRES_MIN,1);
-      // dgusReadVP(VP_USERSETTING_DELAY_MAX,1);
-      // dgusReadVP(VP_USERSETTING_DELAY_MIN,1);
-      // dgusReadVP(VP_ENGINEERMODE_SENSER,1);
-      // dgusReadVP(VP_ENGINEERMODE_PRES,1);
+      dgusReadVP(VP_USERSETTING_TOP_TEMP_MAX,1);
+      dgusReadVP(VP_USERSETTING_TOP_TEMP_MIN,1);
+      dgusReadVP(VP_USERSETTING_BOT_TEMP_MAX,1);
+      dgusReadVP(VP_USERSETTING_BOT_TEMP_MIN,1);
+      dgusReadVP(VP_USERSETTING_PRES_MAX,1);
+      dgusReadVP(VP_USERSETTING_PRES_MIN,1);
+      dgusReadVP(VP_USERSETTING_DELAY_MAX,1);
+      dgusReadVP(VP_USERSETTING_DELAY_MIN,1);
+      dgusReadVP(VP_ENGINEERMODE_SENSER,1);
+      dgusReadVP(VP_ENGINEERMODE_PRES,1);
   }
   //세이브 펑션
   saveTask();
-  //IO테스크
-  IOWork(f_tTop,f_tBot);
   delay(10);
 }
