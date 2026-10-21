@@ -352,15 +352,37 @@ int analogReadStable(int pin){
 }
 
 //온도 센서 값 변환 펑션
-float readTempFrom4_20mA(int aPin){
-  int raw=analogRead(aPin); 
-  float v=raw*(5.0f/1023.0f);
-  float mA=v/0.25f; 
-  mA=constrain(mA,4.0f,20.0f);
-  return (mA-4.0f)*(250.0f/16.0f)-30.0f;
+// float readTempFrom4_20mA(int aPin){
+//   int raw=analogRead(aPin); 
+//   float v=raw*(5.0f/1023.0f);
+//   float mA=v/0.25f; 
+//   mA=constrain(mA,4.0f,20.0f);
+//   return (mA-4.0f)*(250.0f/16.0f)-30.0f;
+// }
+
+float readTempFrom4_20mA(int aPin) {
+  int raw = analogRead(aPin);
+
+  float v = raw * (5.0f / 1023.0f);
+  float mA = v / 0.25f;
+
+  mA = constrain(mA, 4.0f, 20.0f);
+
+  float temp = (mA - 4.0f) * (250.0f / 16.0f) - 30.0f;
+
+  Serial.print("PIN: ");
+  Serial.print(aPin);
+  Serial.print(" RAW: ");
+  Serial.print(raw);
+  Serial.print(" V: ");
+  Serial.print(v);
+  Serial.print(" TEMP: ");
+  Serial.println(temp);
+
+  return temp;
 }
 
-압력 센서 값 변환(레거시)
+// 압력 센서 값 변환(레거시)
 float readPressureBar(){
   int raw = analogRead(pressurePin); 
   float v  = raw*(5.0f/1023.0f);
@@ -2227,6 +2249,7 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
     }
     }
   }
+  //  printBriefStatus();
   //세이브 펑션
   saveTask();
   delay(10);
