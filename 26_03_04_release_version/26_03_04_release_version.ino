@@ -261,6 +261,30 @@ float readPressureBar(){
   float bar=((v-1.0f)/4.0f)*10.0f; if(bar<0.15f) bar=0.0f;
   return bar;
 }
+
+// float readPressureBar() {
+//   int raw = analogRead(pressurePin);
+//   float v = raw * (5.0f / 1023.0f);
+
+//   float bar = ((v - 1.0f) / 4.0f) * 10.0f;
+
+//   Serial.print("Pressure PIN: ");
+//   Serial.print(pressurePin);
+//   Serial.print(" | RAW: ");
+//   Serial.print(raw);
+//   Serial.print(" | V: ");
+//   Serial.print(v, 2);
+//   Serial.print(" | BAR: ");
+//   Serial.println(bar, 2);
+
+//   if (v < 1.0f || v > 5.0f) {
+//     return 0.0f;
+//   }
+
+//   if (bar < 0.15f) bar = 0.0f;
+
+//   return bar;
+// }
 // 값 전환 시 노이즈 필터
 inline float lpf(float prev,float x,uint16_t a_permille){
    float k=a_permille/1000.0f; 
