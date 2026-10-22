@@ -351,43 +351,67 @@ int analogReadStable(int pin){
   return analogRead(pin); 
 }
 
-//온도 센서 값 변환 펑션
-// float readTempFrom4_20mA(int aPin){
-//   int raw=analogRead(aPin); 
-//   float v=raw*(5.0f/1023.0f);
-//   float mA=v/0.25f; 
-//   mA=constrain(mA,4.0f,20.0f);
-//   return (mA-4.0f)*(250.0f/16.0f)-30.0f;
-// }
-
-float readTempFrom4_20mA(int aPin) {
-  int raw = analogRead(aPin);
-
-  float v = raw * (5.0f / 1023.0f);
-  float mA = v / 0.25f;
-
-  mA = constrain(mA, 4.0f, 20.0f);
-
-  float temp = (mA - 4.0f) * (250.0f / 16.0f) - 30.0f;
-
-  Serial.print("PIN: ");
-  Serial.print(aPin);
-  Serial.print(" RAW: ");
-  Serial.print(raw);
-  Serial.print(" V: ");
-  Serial.print(v);
-  Serial.print(" TEMP: ");
-  Serial.println(temp);
-
-  return temp;
+// 온도 센서 값 변환 펑션
+float readTempFrom4_20mA(int aPin){
+  int raw=analogRead(aPin); 
+  float v=raw*(5.0f/1023.0f);
+  float mA=v/0.25f; 
+  mA=constrain(mA,4.0f,20.0f);
+  return (mA-4.0f)*(250.0f/16.0f)-30.0f;
 }
 
+// float readTempFrom4_20mA(int aPin) {
+//   int raw = analogRead(aPin);
+
+//   float v = raw * (5.0f / 1023.0f);
+//   float mA = v / 0.25f;
+
+//   mA = constrain(mA, 4.0f, 20.0f);
+
+//   float temp = (mA - 4.0f) * (250.0f / 16.0f) - 30.0f;
+
+//   Serial.print("PIN: ");
+//   Serial.print(aPin);
+//   Serial.print(" RAW: ");
+//   Serial.print(raw);
+//   Serial.print(" V: ");
+//   Serial.print(v);
+//   Serial.print(" TEMP: ");
+//   Serial.println(temp);
+
+//   return temp;
+// }
+
 // 압력 센서 값 변환(레거시)
-float readPressureBar(){
-  int raw = analogRead(pressurePin); 
-  float v  = raw*(5.0f/1023.0f);
-  v=constrain(v,1.0f,5.0f);
-  float bar=((v-1.0f)/4.0f)*10.0f; if(bar<0.15f) bar=0.0f;
+// float readPressureBar(){
+//   int raw = analogRead(pressurePin); 
+//   float v  = raw*(5.0f/1023.0f);
+//   v=constrain(v,1.0f,5.0f);
+//   float bar=((v-1.0f)/4.0f)*10.0f; if(bar<0.15f) bar=0.0f;
+//   return bar;
+// }
+
+float readPressureBar() {
+  int raw = analogRead(pressurePin);
+  float v = raw * (5.0f / 1023.0f);
+
+  float bar = ((v - 1.0f) / 4.0f) * 10.0f;
+
+  Serial.print("Pressure PIN: ");
+  Serial.print(pressurePin);
+  Serial.print(" | RAW: ");
+  Serial.print(raw);
+  Serial.print(" | V: ");
+  Serial.print(v, 2);
+  Serial.print(" | BAR: ");
+  Serial.println(bar, 2);
+
+  if (v < 1.0f || v > 5.0f) {
+    return 0.0f;
+  }
+
+  if (bar < 0.15f) bar = 0.0f;
+
   return bar;
 }
 //압력 센서 값 변환(모던)
@@ -1803,48 +1827,46 @@ void setup() {
   btnStart.lastChangeMs = btnStop.lastChangeMs = millis();
 
 
-  Settings s;
+  // Settings s;
 
-  s.setTT   = 100;
-  s.setTB   = 100;
-  s.setP_x10= 1;
-  s.holdSec = 90;
-  s.coolTT  = 10;
-  s.coolTB  = 10;
-  s.magic   = SETTINGS_MAGIC;
-
-
-
-  EEPROM.put(37, s);
-
-  SettingEngineers se;
-
-  se.setToptempmax   = 190;
-  se.setToptempmin   = 11;
-  se.setBottempmax= 180;
-  se.setBottempmin = 21;
-  se.setPressmax  = 18;
-  se.setPressmin  = 4;
-  se.setDelaymax   = 3100;
-  se.setDelaymin   = 7;
-  se.setSensorResult = 100;
-  se.setPressResult = 20;
-  se.setlanguage = 1;
-  se.setSensorResult = 100;
-  se.setPressResult = 100;
-
-  EEPROM.put(50, se);
-  Serial.println("EngineerEEPROM 저장 완료");
+  // s.setTT   = 165;
+  // s.setTB   = 160;
+  // s.setP_x10= 15;
+  // s.holdSec = 90;
+  // s.coolTT  = 60;
+  // s.coolTB  = 60;
+  // s.magic   = SETTINGS_MAGIC;
 
 
 
-  workRecord wr;
-  wr.Heating = 1;
-  wr.Holding = 1;
-  wr.Cooling = 1;
+  // EEPROM.put(37, s);
 
-  EEPROM.put(60, wr);
-  Serial.println("작동시간 저장 완료");
+  // SettingEngineers se;
+
+  // se.setToptempmax   = 190;
+  // se.setToptempmin   = 11;
+  // se.setBottempmax= 180;
+  // se.setBottempmin = 21;
+  // se.setPressmax  = 20;
+  // se.setPressmin  = 0;
+  // se.setDelaymax   = 3600;
+  // se.setDelaymin   = 0;
+  // se.setSensorResult = 100;
+  // se.setPressResult = 100;
+  // se.setlanguage = 1;
+
+  // EEPROM.put(50, se);
+  // Serial.println("EngineerEEPROM 저장 완료");
+
+
+
+  // workRecord wr;
+  // wr.Heating = 1;
+  // wr.Holding = 1;
+  // wr.Cooling = 1;
+
+  // EEPROM.put(60, wr);
+  // Serial.println("작동시간 저장 완료");
 
   New_data = 1;
 
