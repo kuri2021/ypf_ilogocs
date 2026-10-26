@@ -285,6 +285,8 @@ HardwareSerial& HMI = Serial1;
 #define USER_SET_PRESS    USER_SET_BIT(2)   // 0x0004
 #define USER_SET_DELAY     USER_SET_BIT(3)   // 0x0008
 
+#define IO_TEST_MAX_TEMP 60.0f
+
 static int user_set_flag = 0;
 
 
@@ -383,37 +385,37 @@ float readTempFrom4_20mA(int aPin){
 // }
 
 // 압력 센서 값 변환(레거시)
-// float readPressureBar(){
-//   int raw = analogRead(pressurePin); 
-//   float v  = raw*(5.0f/1023.0f);
-//   v=constrain(v,1.0f,5.0f);
-//   float bar=((v-1.0f)/4.0f)*10.0f; if(bar<0.15f) bar=0.0f;
-//   return bar;
-// }
-
-float readPressureBar() {
-  int raw = analogRead(pressurePin);
-  float v = raw * (5.0f / 1023.0f);
-
-  float bar = ((v - 1.0f) / 4.0f) * 10.0f;
-
-  Serial.print("Pressure PIN: ");
-  Serial.print(pressurePin);
-  Serial.print(" | RAW: ");
-  Serial.print(raw);
-  Serial.print(" | V: ");
-  Serial.print(v, 2);
-  Serial.print(" | BAR: ");
-  Serial.println(bar, 2);
-
-  if (v < 1.0f || v > 5.0f) {
-    return 0.0f;
-  }
-
-  if (bar < 0.15f) bar = 0.0f;
-
+float readPressureBar(){
+  int raw = analogRead(pressurePin); 
+  float v  = raw*(5.0f/1023.0f);
+  v=constrain(v,1.0f,5.0f);
+  float bar=((v-1.0f)/4.0f)*10.0f; if(bar<0.15f) bar=0.0f;
   return bar;
 }
+
+// float readPressureBar() {
+//   int raw = analogRead(pressurePin);
+//   float v = raw * (5.0f / 1023.0f);
+
+//   float bar = ((v - 1.0f) / 4.0f) * 10.0f;
+
+//   Serial.print("Pressure PIN: ");
+//   Serial.print(pressurePin);
+//   Serial.print(" | RAW: ");
+//   Serial.print(raw);
+//   Serial.print(" | V: ");
+//   Serial.print(v, 2);
+//   Serial.print(" | BAR: ");
+//   Serial.println(bar, 2);
+
+//   if (v < 1.0f || v > 5.0f) {
+//     return 0.0f;
+//   }
+
+//   if (bar < 0.15f) bar = 0.0f;
+
+//   return bar;
+// }
 //압력 센서 값 변환(모던)
 // float readPressureBar() {
 //   int raw = analogRead(pressurePin);
@@ -927,12 +929,22 @@ void pollHMI(){
                       act_flag = v;
                       if(act_flag == ACT_TOP){
                         Serial.println("상판 io 들어옴");
-                        driveLevel(heaterTopPIN, true, HEATER_TOP_ACTIVE_HIGH); 
+                          // if (tTop_raw < IO_TEST_MAX_TEMP) {
+                          //   driveLevel(heaterTopPIN, true, HEATER_TOP_ACTIVE_HIGH);
+                          // } else {
+                          //   driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH);
+                          // }
+                          driveLevel(heaterTopPIN, true, HEATER_TOP_ACTIVE_HIGH);
                         driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH); 
                         driveLevel(fanTopPIN,false,FAN_TOP_ACTIVE_HIGH);
                         driveLevel(fanBotPIN,false,FAN_BOT_ACTIVE_HIGH);
                       }else if(act_flag == ACT_BOTTOM) {
                         Serial.println("하판 io 들어옴");
+                        // if (tBot_raw < IO_TEST_MAX_TEMP) {
+                        //   driveLevel(heaterBotPIN, true, HEATER_BOT_ACTIVE_HIGH);
+                        // } else {
+                        //   driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH);
+                        // }
                         driveLevel(heaterBotPIN, true, HEATER_BOT_ACTIVE_HIGH); 
                         driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH); 
                         driveLevel(fanTopPIN,false,FAN_TOP_ACTIVE_HIGH);
