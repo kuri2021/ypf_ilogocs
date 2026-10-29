@@ -634,44 +634,6 @@ static void pushSetpointsToHMI(){
   dgusWriteVP(VP_WORK_HOLDING, t_holdMs);
   dgusWriteVP(VP_WORK_COOLING, t_coolMs);
 
-  Serial.println("푸시 셋 데이터");
-  Serial.print("상판 온도 : ");
-  Serial.println(TtValue);
-  Serial.print("상판 냉각 : ");
-  Serial.println(TcValue);
-  Serial.print("하판 온도 : ");
-  Serial.println(BtValue);
-  Serial.print("하판 냉각 : ");
-  Serial.println(BcValue);
-  Serial.print("압력 : ");
-  Serial.println(PValue);
-  Serial.print("지연 : ");
-  Serial.println(TValue);
-
-  Serial.print("상판 맥스 : ");
-  Serial.println(toptempmax);
-  Serial.print("상판 민 : ");
-  Serial.println(toptempmin);
-  Serial.print("하판 맥스 : ");
-  Serial.println(bottempmax);
-  Serial.print("하판 민 : ");
-  Serial.println(bottempmin);
-  Serial.print("압력 맥스 : ");
-  Serial.println(pressmax);
-  Serial.print("압력 민 : ");
-  Serial.println(pressmin);
-  Serial.print("지연 민 : ");
-  Serial.println(delaymin);
-  Serial.print("지연 맥스 : ");
-  Serial.println(delaymax);
-  Serial.print("언어 : ");
-  Serial.println(language);
-  Serial.print("센서 보정 : ");
-  Serial.println(sensor_result);
-  Serial.print("압력 보정 : ");
-  Serial.println(press_result);
-  Serial.println("===================================================================");
-
   New_data = 0;
   set_flag = true;
 }
@@ -1149,8 +1111,11 @@ static void printCycleTimesOnce(){
   unsigned long totalMs = (t_total_start>0) ? (now - t_total_start) : 0;
   unsigned long rampMs = 0;
   if (t_ramp_start>0){
-    if (t_hold_start>t_ramp_start) rampMs = t_hold_start - t_ramp_start;
-    else rampMs = now - t_ramp_start;
+    if (t_hold_start>t_ramp_start) {
+      rampMs = t_hold_start - t_ramp_start;
+    }else{
+      rampMs = now - t_ramp_start;
+    } 
   }
   unsigned long holdMs = 0;
   if (t_hold_start>0){
@@ -1182,8 +1147,6 @@ static void printCycleTimesOnce(){
   dgusWriteVP(VP_WORK_HEATING, t_rampMs);
   dgusWriteVP(VP_WORK_HOLDING, t_holdMs);
   dgusWriteVP(VP_WORK_COOLING, t_coolMs);
-  
-
 }
 
 /* ===================== 제어/상태머신 보조 ===================== */
@@ -1220,46 +1183,73 @@ float dutyBot(float sp,float cur){
   return (u>1.0f)?1.0f:u;
 }
 // 작업 시 온도를 설정 온도까지 올리는 함수
-void ctrlHeaterPair(float tTop,float tBot){
+void ctrlHeaterPair(float tTop, float tBot) {
   unsigned long now = millis();
   unsigned long cycle = heaterCycleMsVar();
-  unsigned long el = now - t_heater_cycle;
 
-  if(el >= cycle){ 
-    t_heater_cycle = now; 
-    el = 0; 
+  // 제어 주기 예외 방지
+  if (cycle == 0) {
+    driveLevel(heaterTopPIN, false, HEATER_TOP_ACTIVE_HIGH);
+    driveLevel(heaterBotPIN, false, HEATER_BOT_ACTIVE_HIGH);
+
+    setB(B5_TOP_HEAT, false);
+    setB(B6_BOT_HEAT, false);
+
+    lastDutyTop = 0.0f;
+    lastDutyBot = 0.0f;
+    return;
   }
 
+  unsigned long el = now - t_heater_cycle;
+
+  if (el >= cycle) {
+    t_heater_cycle = now;
+    el = 0;
+  }
+
+  // 목표 온도와 현재 온도의 오차
   float errTop = setTempTop - tTop;
   float errBot = setTempBot - tBot;
 
-  float dT = dutyTop(setTempTop,    tTop);
+  // 기존 출력 계산
+  float dT = dutyTop(setTempTop, tTop);
   float dB = dutyBot(setTempBot, tBot);
 
-  if(errTop > 3.0f){
-    dT = max(dT, 0.8f);  
-  }  
-   if(errBot > 3.0f){
+  // 목표 온도보다 3도 이상 낮으면 최소 출력 80%
+  if (errTop > 3.0f) {
+    dT = max(dT, 0.8f);
+  }
+
+  if (errBot > 3.0f) {
     dB = max(dB, 0.8f);
-  }  
-  
+  }
 
-  if(topAtSet) dT = 0; 
-  if(botAtSet) dB = 0;
+  // 목표 온도 도달 시 출력 차단
+  if (topAtSet) dT = 0.0f;
+  if (botAtSet) dB = 0.0f;
 
-  lastDutyTop = dT; 
+  // 최종 출력 제한: 0~80%
+  dT = constrain(dT, 0.0f, 0.8f);
+  dB = constrain(dB, 0.0f, 0.8f);
+
+  // 최종 출력값 저장
+  lastDutyTop = dT;
   lastDutyBot = dB;
 
-  int onTopMs = (int)(dT * cycle); 
-  int onBotMs = (int)(dB * cycle);
+  // 출력 비율을 SSR ON 시간으로 변환
+  unsigned long onTopMs = (unsigned long)(dT * cycle);
+  unsigned long onBotMs = (unsigned long)(dB * cycle);
 
+  // 현재 제어 주기의 ON/OFF 판정
   bool topOn = (el < onTopMs);
   bool botOn = (el < onBotMs);
 
-  driveLevel(heaterTopPIN, topOn, HEATER_TOP_ACTIVE_HIGH); 
+  // 상판 히터 제어
+  driveLevel(heaterTopPIN, topOn, HEATER_TOP_ACTIVE_HIGH);
   setB(B5_TOP_HEAT, topOn);
 
-  driveLevel(heaterBotPIN, botOn, HEATER_BOT_ACTIVE_HIGH); 
+  // 하판 히터 제어
+  driveLevel(heaterBotPIN, botOn, HEATER_BOT_ACTIVE_HIGH);
   setB(B6_BOT_HEAT, botOn);
 }
 
@@ -1361,33 +1351,6 @@ static void maintainPressure_UIAligned(float pBar, bool isRunState){
     }
   }
 }
-
-// static void testPressure_0_5Bar(float pBar){
-//   // 배기 상태 해제
-//   if (g_exhaustOpen){
-//     driveLevel(exhaustPIN, false, EXHAUST_ACTIVE_HIGH);
-//     setB(B11_EXH, false);
-//     g_exhaustOpen = false;
-//   }
-
-//   // 테스트용 0.5 bar 기준
-//   if (pBar < 0.5f){
-
-//     // 0.5 bar 미만 → 펌프 ON
-//     Press_flag = false;
-
-//     driveLevel(pumpPIN, true, PUMP_ACTIVE_HIGH);
-//     setB(B4_PUMP, true);
-
-//   }else{
-
-//     // 0.5 bar 이상 → 펌프 OFF
-//     Press_flag = true;
-
-//     driveLevel(pumpPIN, false, PUMP_ACTIVE_HIGH);
-//     setB(B4_PUMP, false);
-//   }
-// }
 
 /* ===================== HOLD 예측형 bang-bang(raw) ===================== */
 
@@ -1760,6 +1723,8 @@ static void data_get(int EEPROM_ADDR){
 //신규로 작성된 데이터 세팅
 // EEPROM에 저장된 배열의 데이터를 메모리 전역 변수에 데이터를 가공하여 부여
 // SETUP에서 한번만 실행
+static int Setting_Error_Flag = 0;
+
 static void data_set(){
 if(New_data != 0){
   Settings s;
@@ -1778,16 +1743,63 @@ if(New_data != 0){
   BcValue = s.coolTB;
 
   toptempmax = se.setToptempmax;
+  if(toptempmax<TtValue || toptempmax > 220){
+    toptempmax = 200;
+    Setting_Error_Flag = 1;
+  }
   toptempmin = se.setToptempmin;
+  if(toptempmin>TtValue || toptempmin < 1){
+    toptempmin = 1;
+    Setting_Error_Flag = 1;
+  }
   bottempmax= se.setBottempmax;
+  if(bottempmax < BtValue || bottempmax > 220){
+    bottempmax = 200;
+    Setting_Error_Flag = 1;
+  }
   bottempmin  = se.setBottempmin;
+  if(bottempmin > BtValue || bottempmin < 1){
+    bottempmax = 1;
+    Setting_Error_Flag = 1;
+  }
   pressmax   = se.setPressmax;
+  if(pressmax < PValue || pressmax > 20){
+    pressmax = 20;
+    Setting_Error_Flag = 1;
+  }
   pressmin   = se.setPressmin;
+  if(pressmin > PValue || pressmin < 0){
+    pressmin = 0;
+    Setting_Error_Flag = 1;
+  }
   delaymax    = se.setDelaymax;
+  if(delaymax < TValue || delaymax >3600){
+    delaymax = 3600;
+    Setting_Error_Flag = 1;
+  }
   delaymin    = se.setDelaymin;
+  if(delaymin > TValue || delaymin < 0){
+    delaymin = 0;
+    Setting_Error_Flag = 1;
+  }
   language  = se.setlanguage;
+  if(language != 0 && language != 1){
+    language = 0;
+    Setting_Error_Flag = 1;
+  }
   sensor_result  = se.setSensorResult;
+  if(sensor_result > 120 && sensor_result < 80){
+    sensor_result = 100;
+    Setting_Error_Flag = 1;
+  }
   press_result  = se.setPressResult;
+  if(press_result > 120 && press_result < 80){
+    press_result = 100;
+    Setting_Error_Flag = 1;
+  }
+  if(Setting_Error_Flag == 1){
+    saveSettingsEngineerToEEPROM();
+  }
 
 
   // runtime 변수에도 반영
@@ -1849,33 +1861,10 @@ void setup() {
   // s.coolTB  = 60;
   // s.magic   = SETTINGS_MAGIC;
 
-
-
-  // EEPROM.put(37, s);
-
-  // SettingEngineers se;
-
-  // se.setToptempmax   = 190;
-  // se.setToptempmin   = 11;
-  // se.setBottempmax= 180;
-  // se.setBottempmin = 21;
-  // se.setPressmax  = 20;
-  // se.setPressmin  = 0;
-  // se.setDelaymax   = 3600;
-  // se.setDelaymin   = 0;
-  // se.setSensorResult = 100;
-  // se.setPressResult = 100;
-  // se.setlanguage = 1;
-
-  // EEPROM.put(50, se);
-  // Serial.println("EngineerEEPROM 저장 완료");
-
-
-
   // workRecord wr;
-  // wr.Heating = 1;
-  // wr.Holding = 1;
-  // wr.Cooling = 1;
+  // wr.Heating = 1200;
+  // wr.Holding = 2400;
+  // wr.Cooling = 3600;
 
   // EEPROM.put(60, wr);
   // Serial.println("작동시간 저장 완료");
@@ -2046,20 +2035,7 @@ if(ST!=ST_IDLE && ST!=ST_END){
    }
 }
  
-    
-
-
-  // int rTop = analogReadStable(tempTopPin); //상판 아날로그 센서 데이터 변환 변수
-  // int rBot = analogReadStable(tempBotPin); //하판 아날로그 센서 데이터 변환 변수
-  // int rP   = analogReadStable(pressurePin); //압력 아날로그 센서 데이터 변환 변수
-  // float rtTop = readTempFrom4_20mA(tempTopPin);// 상판 데이터를 ℃단위로 변환 변수
-  // float rtBot = readTempFrom4_20mA(tempBotPin);// 하판 데이터를 ℃단위로 변환 변수
-  // Serial.println(rBot);
-  // float rpBar = readPressureBar();//압력 데이터를 BAR단위로 변환 변수
-  // bool topRail = (rTop>=ADC_NEAR_HIGH), botRail=(rBot>=ADC_NEAR_HIGH), pRail=(rP>=ADC_NEAR_HIGH);
-
-  // (순서 변경: 여기서는 updateTempRates 호출하지 않음)
-
+  
 //센서 필터링(노이즈 제거)
   if(!lpfInit){
     if(!topRail) f_tTop=rtTop; 
@@ -2259,6 +2235,14 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
       dgusReadVP(VP_SET_TB,1); 
       dgusReadVP(VP_SET_P,1);
       dgusReadVP(VP_SET_H,1);  
+      dgusReadVP(VP_USERSETTING_TOP_TEMP_MAX,1);
+      dgusReadVP(VP_USERSETTING_TOP_TEMP_MIN,1);
+      dgusReadVP(VP_USERSETTING_BOT_TEMP_MAX,1);
+      dgusReadVP(VP_USERSETTING_BOT_TEMP_MIN,1);
+      dgusReadVP(VP_USERSETTING_PRES_MAX,1);
+      dgusReadVP(VP_USERSETTING_PRES_MIN,1);
+      dgusReadVP(VP_USERSETTING_DELAY_MAX,1);
+      dgusReadVP(VP_USERSETTING_DELAY_MIN,1);
     }
 
     if (page & ACT_LOG_PAGE) {
@@ -2270,7 +2254,12 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
     }
 
     if (page & RUN_TIME_PAGE) {
-        // Serial.println("RUN TIME PAGE");
+
+      Serial.println("RUN TIME PAGE");
+      Serial.println("RUN TIME PAGE");
+      Serial.println("RUN TIME PAGE");
+      Serial.println("RUN TIME PAGE");
+      Serial.println("RUN TIME PAGE");
     }
 
     if (page & LAG_PAGE) {
