@@ -362,6 +362,59 @@ float readTempFrom4_20mA(int aPin){
   return (mA-4.0f)*(250.0f/16.0f)-30.0f;
 }
 
+#define VP_LOG1_1  0x8500
+#define VP_LOG1_2  0x8502
+#define VP_LOG2_1  0x8504
+#define VP_LOG2_2  0x8506
+#define VP_LOG3_1  0x8508
+#define VP_LOG3_2  0x850A
+#define LOG_MAX 20
+
+struct LogData {
+    uint16_t type;
+    uint16_t value;
+};
+
+LogData logs[LOG_MAX];
+
+#define EEPROM_LOG_ADDR 70
+#define EEPROM_LOG_MAGIC 0xABCD
+
+unsigned long lastEEPROMsave = 0;
+const unsigned long EEPROM_SAVE_INTERVAL = 5000;
+
+struct SavedLogData {
+    uint16_t magic;
+    LogData logs[3];
+};
+
+void saveLogsToEEPROM() {
+    SavedLogData saved;
+
+    saved.magic = EEPROM_LOG_MAGIC;
+
+    for (int i = 0; i < 3; i++) {
+        saved.logs[i] = logs[i];
+    }
+
+    EEPROM.put(EEPROM_LOG_ADDR, saved);
+
+    Serial.println("EEPROM 로그 저장 완료");
+}
+
+void updateEEPROMLog() {
+
+    unsigned long now = millis();
+
+    if (now - lastEEPROMsave >= EEPROM_SAVE_INTERVAL) {
+
+        lastEEPROMsave = now;
+
+        saveLogsToEEPROM();
+    }
+}
+
+
 // float readTempFrom4_20mA(int aPin) {
 //   int raw = analogRead(aPin);
 
@@ -1216,13 +1269,13 @@ void ctrlHeaterPair(float tTop, float tBot) {
   float dB = dutyBot(setTempBot, tBot);
 
   // 목표 온도보다 3도 이상 낮으면 최소 출력 80%
-  if (errTop > 3.0f) {
-    dT = max(dT, 0.8f);
-  }
+ if (errTop > 3.0f) {
+    dT = max(dT, 1.0f);
+}
 
-  if (errBot > 3.0f) {
-    dB = max(dB, 0.8f);
-  }
+if (errBot > 3.0f) {
+    dB = max(dB, 1.0f);
+}
 
   // 목표 온도 도달 시 출력 차단
   if (topAtSet) dT = 0.0f;
@@ -1651,6 +1704,18 @@ static bool readButtonDebounced(ButtonState &b){
   }
   return false;
 }
+
+// void readLogData() {
+
+//         for (int i = 0; i < LOG_MAX; i++)
+//     {
+//         uint16_t addr = VP_LOG + (i * 4);
+
+//         dgusReadVP(addr, 1);      // Type 읽기 요청
+//         dgusReadVP(addr + 2, 1);  // Value 읽기 요청
+//     }
+// }   
+
 //정지 버튼을 컨트롤하는 함수
 // 인펄스 방지를 위해 0.1초간 신호가 들어올 시 에만 리턴
 // 리턴 값 1,2,3
@@ -1974,6 +2039,7 @@ static int record_time = 0;
 #define AT_SET_HYS 1.5f   // 설정온도 기준 1.5도 히스테리시스
 unsigned long loopStart, loopEnd;
 bool stopPressed = digitalRead(btnStop.pin) == HIGH;  // 또는 네 디바운스 함수의 상태용 반환
+static int count = 0;
 
 //기계 전체 동작 및 관리하는 메인 루프
 void loop(){
@@ -2168,7 +2234,7 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
       test_flag = true;
     }
   }
-
+ 
 //디스플레이한테 읽기 요청
   if(now2 - lastSetPollMs >= SET_POLL_MS){
     lastSetPollMs = now2;
@@ -2180,7 +2246,8 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
         dgusReadVP(VP_SET_TT,1); 
         dgusReadVP(VP_SET_TB,1); 
         dgusReadVP(VP_SET_P,1);
-    }
+        dgusReadVP(VP_SET_H,1);  
+      }
 
     if (page & TOP_TMP_SET_PAGE) {
         dgusReadVP(VP_SET_TT,1); 
@@ -2244,24 +2311,6 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
       dgusReadVP(VP_USERSETTING_DELAY_MAX,1);
       dgusReadVP(VP_USERSETTING_DELAY_MIN,1);
     }
-
-    if (page & ACT_LOG_PAGE) {
-        // Serial.println("ACT LOG PAGE");
-    }
-
-    if (page & ERR_LOG_PAGE) {
-        // Serial.println("ERROR LOG PAGE");
-    }
-
-    if (page & RUN_TIME_PAGE) {
-
-      Serial.println("RUN TIME PAGE");
-      Serial.println("RUN TIME PAGE");
-      Serial.println("RUN TIME PAGE");
-      Serial.println("RUN TIME PAGE");
-      Serial.println("RUN TIME PAGE");
-    }
-
     if (page & LAG_PAGE) {
         dgusReadVP(VP_LANGUAGE_FLAG,1);
     }
@@ -2274,6 +2323,7 @@ else if(botAtSet && f_tBot <= setTempBot - AT_SET_HYS){
   }
   //  printBriefStatus();
   //세이브 펑션
+
   saveTask();
   delay(10);
 }
